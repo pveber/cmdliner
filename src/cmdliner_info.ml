@@ -154,6 +154,7 @@ module Arg = struct
 
   let compare a0 a1 = Int.compare a0.id a1.id
   module Set = Set.Make (struct type nonrec t = t let compare = compare end)
+  module Map = Map.Make (struct type nonrec t = t let compare = compare end)
 end
 
 (* Commands *)

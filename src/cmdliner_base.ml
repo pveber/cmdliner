@@ -44,6 +44,84 @@ let suggest s candidates =
   let dist, suggs = List.fold_left add (max_int, []) candidates in
   if dist < 3 (* suggest only if not too far *) then suggs else []
 
+let tokenize s =
+  let explode s =
+    List.init (String.length s) (fun i -> s.[i])
+  in
+  let run = function
+  | None
+  | Some (_, _ :: _) -> None
+  | Some (r, []) -> Some r
+  in
+  let char c = function
+  | [] -> None
+  | h :: t ->
+      if h = c then Some (c, t)
+      else None
+  in
+  let ( || ) p1 p2 xs =
+    match p1 xs with
+    | None -> p2 xs
+    | Some _ as res -> res
+  in
+  let quote_char = char '\'' || char '"' in
+  let ( >>= ) p f xs =
+    match p xs with
+    | None -> None
+    | Some (r, ys) -> (f r) ys
+  in
+  let return c xs = Some (c, xs) in
+  let rev_implode xs =
+    let n = List.length xs in
+    let s = Bytes.create n in
+    List.iteri (fun i c -> Bytes.set s (n - i - 1) c) xs ;
+    String.of_bytes s
+  in
+  let many p ~sep_by:sep xs =
+    let rec loop acc xs =
+      match (sep >>= fun _ -> p) xs with
+      | None -> Some (List.rev acc, xs)
+      | Some (r, ys) -> loop (r :: acc) ys
+    in
+    match p xs with
+    | None -> Some ([], xs)
+    | Some (r, ys) -> loop [r] ys
+  in
+  let take_while f xs =
+    let rec loop acc = function
+    | [] -> (
+        match acc with
+        | [] -> None
+        | _ -> Some (rev_implode acc, [])
+      )
+    | h :: t as xs ->
+        if f h then loop (h :: acc) t else Some (rev_implode acc, xs)
+    in
+    loop [] xs
+  in
+  let quote =
+    quote_char >>= fun c ->
+    take_while (fun x -> x <> c) >>= fun tok ->
+    char c >>= fun _ ->
+    return tok
+  in
+  let is_space = function ' ' | '\t' | '\n' -> true | _ -> false in
+  let space = take_while is_space in
+  let raw_token = take_while (fun c -> not (is_space c)) in
+  let token = quote || raw_token in
+  let maybe p xs =
+    match p xs with
+    | None -> Some (None, xs)
+    | Some (x, ys) -> Some (Some x, ys)
+  in
+  let tokens =
+    many ~sep_by:space token >>= fun toks ->
+    maybe space >>= fun maybe_trailing_space ->
+    if Option.is_none maybe_trailing_space then return toks
+    else return (toks @ [""])
+  in
+  run @@ tokens (explode s)
+
 (* Invalid argument strings *)
 
 let err_empty_list = "empty list"

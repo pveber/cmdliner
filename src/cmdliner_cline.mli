@@ -19,6 +19,19 @@ val actual_args : t -> Cmdliner_info.Arg.t -> string list
 val is_opt : string -> bool
 val deprecated_msgs : t -> string list
 
+type incomplete_token =
+| Incomplete_option_name of [`Single_dash | `Double_dash | `Short of string | `Long of string]
+| Incomplete_value of {
+    partial_value : string ;
+    maybe_arg : Cmdliner_info.Arg.t option ;
+  }
+| Empty of { maybe_pos_arg : Cmdliner_info.Arg.t option }
+
+val partial_parsing :
+  Cmdliner_info.Arg.Set.t ->
+  string list ->
+  (incomplete_token * t) option
+
 (*---------------------------------------------------------------------------
    Copyright (c) 2011 The cmdliner programmers
 

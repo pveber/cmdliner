@@ -202,6 +202,129 @@ let deprecated_msgs cl =
   in
   Amap.fold add cl []
 
+type incomplete_token =
+| Incomplete_option_name of [`Single_dash | `Double_dash | `Short of string | `Long of string]
+| Incomplete_value of {
+    partial_value : string ;
+    maybe_arg : Cmdliner_info.Arg.t option ;
+  }
+| Empty of { maybe_pos_arg : Cmdliner_info.Arg.t option }
+
+let parse_last_token optidx raw_args =
+  match List.rev raw_args with
+  | [] -> [], `Empty
+  | "-" :: t -> t, `Incomplete_option_name `Single_dash
+  | "--" :: t -> t, `Incomplete_option_name `Double_dash
+  | "" :: t -> t, `Empty
+  | h :: t -> (
+      if is_opt h then (
+        match parse_opt_arg h with
+        | name, None ->
+            let name = if String.starts_with h ~prefix:"--" then `Long name else `Short name in
+            t, `Incomplete_option_name name
+        | name, Some v ->
+            t, `Incomplete_option_value (v, name)
+      )
+      else (
+        match t with
+        | [] -> t, `Incomplete_positional_argument h
+        | u :: v -> (
+            if is_opt u then
+              match parse_opt_arg u with
+              | name, None -> (
+                  match Cmdliner_trie.find optidx name with
+                  | `Ambiguous | `Not_found -> v, `Indeterminate
+                  | `Ok a -> (
+                      match Cmdliner_info.Arg.opt_kind a with
+                      | Opt | Opt_vopt _ -> v, `Incomplete_option_value (h, name)
+                      | Flag ->  t, `Incomplete_positional_argument h
+                    )
+                )
+              | name, Some _ -> t, `Incomplete_positional_argument h
+            else t, `Incomplete_positional_argument h
+          )
+      )
+    )
+
+let partial_process_pos_args posidx cl pargs =
+  let last = List.length pargs - 1 in
+  let pos rev k = if rev then last - k else k in
+  let rec loop cl = function
+  | [] -> cl
+  | a :: al ->
+      let apos = Cmdliner_info.Arg.pos_kind a in
+      let rev = Cmdliner_info.Arg.pos_rev apos in
+      let start = pos rev (Cmdliner_info.Arg.pos_start apos) in
+      let stop = match Cmdliner_info.Arg.pos_len apos with
+      | None -> pos rev last
+      | Some n -> pos rev (Cmdliner_info.Arg.pos_start apos + n - 1)
+      in
+      let start, stop = if rev then stop, start else start, stop in
+      let args = take_range start stop pargs in
+      let cl = Cmdliner_info.Arg.Map.add a args cl in
+      loop cl al
+  in
+  loop cl posidx
+
+
+let find_arg set name =
+  match Cmdliner_trie.find set name with
+  | `Ok arg -> Some arg
+  | `Ambiguous | `Not_found -> None
+
+let parg_covers a n =
+  let module Arg = Cmdliner_info.Arg in
+  Arg.is_pos a && (
+    let pk = Arg.pos_kind a in
+    Arg.pos_start pk <= n && (
+      match Arg.pos_len pk with
+      | None -> true
+      | Some len -> n < Arg.pos_start pk + len
+    )
+)
+
+let guess_positional_arg arg_set i =
+  let exception Found of Cmdliner_info.Arg.t in
+  try
+    Cmdliner_info.Arg.Set.fold
+      (fun a () -> if parg_covers a i then raise (Found a) else ())
+      arg_set () ;
+    None
+  with Found a -> Some a
+
+let partial_parsing arg_set raw_args =
+  let optidx, posidx, cl = arg_info_indexes arg_set in
+  let complete_fragment, last_token = parse_last_token optidx raw_args in
+  match parse_opt_args ~peek_opts:false optidx cl complete_fragment with
+  | Ok (cl, pargs) -> (
+      let pos_values =
+        partial_process_pos_args posidx Cmdliner_info.Arg.Map.empty pargs
+      in
+      let cl =
+        Cmdliner_info.Arg.Map.fold
+          (fun k v acc -> Amap.add k (P v) acc)
+          pos_values
+          cl
+      in
+      let completion_token =
+        match last_token with
+        | `Incomplete_option_name n -> Some (Incomplete_option_name n)
+        | `Incomplete_option_value (partial_value, n) ->
+            Some (Incomplete_value { partial_value ; maybe_arg = find_arg optidx n })
+        | `Incomplete_positional_argument partial_value ->
+            let n = List.length pargs in
+            let maybe_arg = guess_positional_arg arg_set (n - 1) in
+            Some (Incomplete_value { partial_value ; maybe_arg })
+        | `Empty ->
+            let n = List.length pargs in
+            let maybe_pos_arg = guess_positional_arg arg_set n in
+            Some (Empty { maybe_pos_arg })
+        | `Indeterminate -> None
+      in
+      Option.map (fun t -> t, cl) completion_token
+    )
+  | Error (msg, _, _) -> None
+
 (*---------------------------------------------------------------------------
    Copyright (c) 2011 The cmdliner programmers
 

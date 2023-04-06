@@ -12,6 +12,8 @@ val suggest : string -> string list -> string list
 (** [suggest near candidates]  suggest values from [candidates]
     not too far from [near]. *)
 
+val tokenize : string -> string list option
+
 (** {1:fmt Formatting helpers} *)
 
 val pp_text : Format.formatter -> string -> unit

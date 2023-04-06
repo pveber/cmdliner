@@ -34,7 +34,7 @@ val env_var : ?deprecated:string -> ?docs:string -> ?doc:string -> string -> env
 
 type 'a t = 'a Cmdliner_term.t
 
-type info
+type info = Cmdliner_info.Arg.t
 val info :
   ?deprecated:string -> ?absent:string -> ?docs:string -> ?docv:string ->
   ?doc:string -> ?env:env -> string list -> info

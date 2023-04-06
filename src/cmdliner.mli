@@ -1161,6 +1161,28 @@ module Arg : sig
   (** See {!Cmd.Env.val-info}. *)
 end
 
+module Completion : sig
+  type 'a proposal = [
+    | `Subcmd of string * string
+    | `Option of string * string
+    | `Value of 'a
+  ]
+
+  type 'a handler
+
+  val handler :
+    _ Arg.t ->
+    (string -> 'a proposal list) Term.t ->
+    'a handler
+
+  val complete :
+    ?env:(string -> string option) ->
+    'a handler list ->
+    _ Cmd.t ->
+    string ->
+    'a proposal list
+end
+
 (*---------------------------------------------------------------------------
    Copyright (c) 2011 The cmdliner programmers
 

@@ -15,6 +15,7 @@ module Cmd = struct
   include Cmdliner_eval
 end
 module Arg = Cmdliner_arg
+module Completion = Cmdliner_completion
 
 (*---------------------------------------------------------------------------
    Copyright (c) 2011 The cmdliner programmers
